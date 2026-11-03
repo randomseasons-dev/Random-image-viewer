@@ -1,6 +1,6 @@
 # Picture Viewer
 
-Simple picture & video viewer for Windows (Tauri 2 + React).
+Simple picture & video viewer for Windows. Made with minimalism in mind. Can play videos inside the app. Also include a simple picture editor. 
 
 - Folder tree on the left, thumbnails in the middle, preview on the right (drag the dividers to resize; the picture always fills the preview).
 - Ribbon: Layout (Small → Huge thumbnails + size slider, List, Details), Sort by (name, dates, size, type, dimensions, asc/desc), **pic data** (green = show dimensions / size / type on every picture, also in fullscreen), Fullscreen.
