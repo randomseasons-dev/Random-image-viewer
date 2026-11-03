@@ -1,3 +1,4 @@
+mod files;
 mod thumbs;
 
 use serde::Serialize;
@@ -248,7 +249,12 @@ pub fn run() {
             get_places,
             get_dims,
             set_gen,
-            startup_path
+            startup_path,
+            files::clipboard_set,
+            files::clipboard_files,
+            files::paste_files,
+            files::save_image,
+            files::reveal
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5,7 +5,8 @@ import { Thumb } from "./Thumb";
 type Common = {
   gen: number;
   picData: boolean;
-  onSelect: (path: string) => void;
+  onSelect: (path: string, e: React.MouseEvent) => void;
+  onContext: (path: string | null, e: React.MouseEvent) => void;
   onOpen: (it: Item) => void;
   onMeta: (path: string, m: Meta) => void;
 };
@@ -16,6 +17,9 @@ type Props = Common & {
   view: View;
   thumb: number;
   selPath: string | null;
+  sels: Set<string>;
+  cut: Set<string>;
+  onBlank: () => void;
   sortKey: SortKey;
   sortDesc: boolean;
   onSort: (k: SortKey) => void;
@@ -23,14 +27,27 @@ type Props = Common & {
   empty: string;
 };
 
-type CellProps = Common & { item: Item; meta?: Meta; sel: boolean; thumb: number; px: number };
+type CellProps = Common & { item: Item; meta?: Meta; sel: boolean; cut: boolean; thumb: number; px: number };
 
-const Cell = memo(function Cell({ item, meta, sel, thumb, px, gen, picData, onSelect, onOpen, onMeta }: CellProps) {
+// mouse handlers shared by all three views
+const mouse = (it: Item, p: Common) => ({
+  "data-path": it.path,
+  onMouseDown: (e: React.MouseEvent) => p.onSelect(it.path, e),
+  onDoubleClick: () => p.onOpen(it),
+  onContextMenu: (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    p.onContext(it.path, e);
+  },
+});
+const cls = (base: string, sel: boolean, cut: boolean) => base + (sel ? " sel" : "") + (cut ? " cut" : "");
+
+const Cell = memo(function Cell(p: CellProps) {
+  const { item, meta, sel, cut, thumb, px, gen, picData } = p;
   return (
-    <div className={"cell" + (sel ? " sel" : "")} data-path={item.path} style={{ width: thumb + 14 }} title={item.name}
-      onMouseDown={() => onSelect(item.path)} onDoubleClick={() => onOpen(item)}>
+    <div className={cls("cell", sel, cut)} style={{ width: thumb + 14 }} title={item.name} {...mouse(item, p)}>
       <div className="cell-thumb" style={{ width: thumb, height: thumb }}>
-        <Thumb item={item} px={px} gen={gen} onMeta={onMeta} />
+        <Thumb item={item} px={px} gen={gen} onMeta={p.onMeta} />
         {item.kind === "video" && <div className="badge">▶</div>}
         {picData && item.kind !== "dir" && <div className="pd">{infoShort(item, meta)}</div>}
       </div>
@@ -39,11 +56,11 @@ const Cell = memo(function Cell({ item, meta, sel, thumb, px, gen, picData, onSe
   );
 });
 
-const Row = memo(function Row({ item, meta, sel, gen, picData, onSelect, onOpen, onMeta }: Omit<CellProps, "thumb" | "px">) {
+const Row = memo(function Row(p: Omit<CellProps, "thumb" | "px">) {
+  const { item, meta, sel, cut, gen, picData } = p;
   return (
-    <div className={"lrow" + (sel ? " sel" : "")} data-path={item.path} title={item.name}
-      onMouseDown={() => onSelect(item.path)} onDoubleClick={() => onOpen(item)}>
-      <div className="licon"><Thumb item={item} px={128} gen={gen} onMeta={onMeta} /></div>
+    <div className={cls("lrow", sel, cut)} title={item.name} {...mouse(item, p)}>
+      <div className="licon"><Thumb item={item} px={128} gen={gen} onMeta={p.onMeta} /></div>
       <div className="lname">
         <span>{item.name}</span>
         {picData && item.kind !== "dir" && <span className="lpd">{infoShort(item, meta)}</span>}
@@ -52,12 +69,12 @@ const Row = memo(function Row({ item, meta, sel, gen, picData, onSelect, onOpen,
   );
 });
 
-const DRow = memo(function DRow({ item, meta, sel, gen, onSelect, onOpen, onMeta }: Omit<CellProps, "thumb" | "px">) {
+const DRow = memo(function DRow(p: Omit<CellProps, "thumb" | "px">) {
+  const { item, meta, sel, cut, gen } = p;
   return (
-    <div className={"drow" + (sel ? " sel" : "")} data-path={item.path}
-      onMouseDown={() => onSelect(item.path)} onDoubleClick={() => onOpen(item)}>
+    <div className={cls("drow", sel, cut)} {...mouse(item, p)}>
       <div className="dname" title={item.name}>
-        <div className="licon"><Thumb item={item} px={128} gen={gen} onMeta={onMeta} /></div>
+        <div className="licon"><Thumb item={item} px={128} gen={gen} onMeta={p.onMeta} /></div>
         <span>{item.name}</span>
       </div>
       <div>{fmtDate(item.modified)}</div>
@@ -81,7 +98,7 @@ const COLS: [SortKey | null, string][] = [
 ];
 
 export default function FileView(p: Props) {
-  const { items, meta, view, selPath, scrollRef } = p;
+  const { items, meta, view, selPath, sels, cut, scrollRef } = p;
   const [width, setWidth] = useState(800);
 
   useEffect(() => {
@@ -100,22 +117,32 @@ export default function FileView(p: Props) {
   // never wider than the pane
   const thumb = Math.max(48, Math.min(p.thumb, width - 40));
   const px = Math.round(thumb * (window.devicePixelRatio || 1));
-  const common = { gen: p.gen, picData: p.picData, onSelect: p.onSelect, onOpen: p.onOpen, onMeta: p.onMeta };
+  const common = { gen: p.gen, picData: p.picData, onSelect: p.onSelect, onContext: p.onContext, onOpen: p.onOpen, onMeta: p.onMeta };
+  const blank = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement;
+    return t === e.currentTarget || t.classList.contains("grid") || t.classList.contains("lgrid") || t.classList.contains("dtable");
+  };
 
   return (
-    <div className={"files " + view} ref={scrollRef}>
+    <div className={"files " + view} ref={scrollRef}
+      onMouseDown={(e) => e.button === 0 && blank(e) && p.onBlank()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (blank(e)) p.onBlank();
+        p.onContext(null, e);
+      }}>
       {items.length === 0 && <div className="files-empty">{p.empty}</div>}
       {view === "thumbs" && (
         <div className="grid">
           {items.map((it) => (
-            <Cell key={it.path} item={it} meta={meta[it.path]} sel={it.path === selPath} thumb={thumb} px={px} {...common} />
+            <Cell key={it.path} item={it} meta={meta[it.path]} sel={sels.has(it.path)} cut={cut.has(it.path)} thumb={thumb} px={px} {...common} />
           ))}
         </div>
       )}
       {view === "list" && (
         <div className="lgrid">
           {items.map((it) => (
-            <Row key={it.path} item={it} meta={meta[it.path]} sel={it.path === selPath} {...common} />
+            <Row key={it.path} item={it} meta={meta[it.path]} sel={sels.has(it.path)} cut={cut.has(it.path)} {...common} />
           ))}
         </div>
       )}
@@ -130,7 +157,7 @@ export default function FileView(p: Props) {
             ))}
           </div>
           {items.map((it) => (
-            <DRow key={it.path} item={it} meta={meta[it.path]} sel={it.path === selPath} {...common} />
+            <DRow key={it.path} item={it} meta={meta[it.path]} sel={sels.has(it.path)} cut={cut.has(it.path)} {...common} />
           ))}
         </div>
       )}

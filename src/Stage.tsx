@@ -16,6 +16,7 @@ type Props = {
   onNext: () => void;
   onToggleFs: () => void;
   onMeta: (path: string, m: Meta) => void;
+  onWheel: (dy: number) => void;
 };
 
 function StageImage({ item, px, gen, onMeta }: { item: Item; px: number; gen: number; onMeta: Props["onMeta"] }) {
@@ -62,6 +63,7 @@ export default function Stage(p: Props) {
 
   return (
     <div className={"stage" + (fs ? " fs" : "") + (showUi ? "" : " idle")} onMouseMove={poke}
+      onWheel={(e) => fs && !(e.target as HTMLElement).closest(".vp-controls") && p.onWheel(e.deltaY)}
       onDoubleClick={(e) => item?.kind === "image" && (e.target as HTMLElement).classList.contains("stage-img") && p.onToggleFs()}>
       {!item && <div className="stage-empty">Select a picture or video</div>}
       {item?.kind === "dir" && (

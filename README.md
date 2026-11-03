@@ -5,6 +5,8 @@ Simple picture & video viewer for Windows (Tauri 2 + React).
 - Folder tree on the left, thumbnails in the middle, preview on the right (drag the dividers to resize; the picture always fills the preview).
 - Ribbon: Layout (Small → Huge thumbnails + size slider, List, Details), Sort by (name, dates, size, type, dimensions, asc/desc), **pic data** (green = show dimensions / size / type on every picture, also in fullscreen), Fullscreen.
 - Fullscreen: `Esc` exits, `←` / `→` previous / next. Video controls and cursor hide after 3 s without mouse movement.
+- Explorer actions: Ctrl+click / Shift+click / Ctrl+A multi-select, **Ctrl+C / Ctrl+X / Ctrl+V** copy and move files (shared with Windows Explorer's clipboard), right-click menu, **Shuffle** (random order, also in the ribbon; click again to reshuffle).
+- **Editor** (right-click → Edit, or Ctrl+E): rectangle / free (lasso) / line (polygon) selection, crop, rotate 90° and flip, brush, mosaic brush and mosaic-selection, fill, text, color adjust (exposure, brightness, contrast, highlights, shadows, saturation, vibrance, warmth, tint), undo/redo, zoom/pan. Save copy (`name_edited.ext`) or overwrite.
 - Video player: play/pause, ±5 s / ±10 s, seek bar, speed, volume, and an **A–B loop**: press **A** at the loop start, then **B** at the loop end — the section A→B repeats until you press B again or ✕.
 
 ## Formats
@@ -16,7 +18,11 @@ Simple picture & video viewer for Windows (Tauri 2 + React).
 
 | Key | Action |
 |---|---|
-| Arrows / Home / End | move selection (fullscreen: ← → switch picture) |
+| Arrows / Home / End | move selection (Shift = extend) |
+| Fullscreen: ← → / mouse wheel | previous / next |
+| Fullscreen: PageUp / PageDown, Home / End | jump 10 back / forward, first / last |
+| Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+A | copy / cut / paste files, select all |
+| Ctrl+E | edit picture |
 | Enter / double-click | open folder / fullscreen |
 | Backspace, Alt+↑ | parent folder |
 | Alt+← / Alt+→ | back / forward |

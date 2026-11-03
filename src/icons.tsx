@@ -22,6 +22,8 @@ export const IVol = ({ size = 18 }: P) => svg(size, <><path d="M4 9h4l5-4v14l-5-
 export const IMute = ({ size = 18 }: P) => svg(size, <><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l5 6M22 9l-5 6" /></>);
 export const ISortAsc = ({ size = 18 }: P) => svg(size, <path d="M7 4v16M3 8l4-4 4 4M14 6h7M14 12h5M14 18h3" />);
 export const ISortDesc = ({ size = 18 }: P) => svg(size, <path d="M7 4v16M3 16l4 4 4-4M14 6h3M14 12h5M14 18h7" />);
+export const IShuffle = ({ size = 18 }: P) => svg(size, <path d="M3 7h3.5c2 0 3.2 1 4.3 2.7l2.4 4.6C14.3 16 15.5 17 17.5 17H21M3 17h3.5c1.4 0 2.4-.5 3.2-1.4M14.3 8.4c.8-.9 1.8-1.4 3.2-1.4H21M18 4l3 3-3 3M18 14l3 3-3 3" />);
+export const IEdit = ({ size = 18 }: P) => svg(size, <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>);
 export const IInfo = ({ size = 18 }: P) => svg(size, <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.5" /></>);
 
 export const IFolder = ({ size = 18 }: P) => (

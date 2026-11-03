@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { Entry, Item, Meta, Place, SortKey, View, bucket, fmtSize, infoShort, load, normPath, parentOf, save, toItem } from "./lib";
+import { Entry, Item, Meta, Place, SortKey, View, bucket, fmtSize, infoShort, load, normPath, parentOf, save, shuffleRank, toItem } from "./lib";
 import { clearVideoQueue } from "./videoThumbs";
 import Tree from "./Tree";
 import FileView from "./FileView";
 import Stage from "./Stage";
-import { IBack, IFull, IFwd, IInfo, IRefresh, ISortAsc, ISortDesc, IUp } from "./icons";
+import Editor from "./Editor";
+import { IBack, IEdit, IFull, IFwd, IInfo, IRefresh, IShuffle, ISortAsc, ISortDesc, IUp } from "./icons";
 import "./App.css";
 
 const PRESETS: [string, number][] = [
@@ -24,7 +25,10 @@ const SORTS: [SortKey, string][] = [
   ["size", "Size"],
   ["type", "Type"],
   ["dims", "Dimensions"],
+  ["shuffle", "Shuffled"],
 ];
+type ClipFiles = { paths: string[]; cut: boolean };
+type Menu = { x: number; y: number; item: Item | null; canPaste: boolean };
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 function Splitter({ onDrag }: { onDrag: (dx: number, done: boolean) => void }) {
@@ -67,6 +71,13 @@ export default function App() {
   const [fs, setFs] = useState(false);
   const [treeW, setTreeW] = useState<number>(() => load("treeW", 230));
   const [prevW, setPrevW] = useState<number>(() => load("prevW", 520));
+  const [sels, setSels] = useState<Set<string>>(new Set());
+  const [cutSet, setCutSet] = useState<Set<string>>(new Set());
+  const [seed, setSeed] = useState(() => (Math.random() * 2 ** 32) >>> 0);
+  const [editItem, setEditItem] = useState<Item | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [notice, setNotice] = useState("");
+  const anchor = useRef<string | null>(null);
 
   const genRef = useRef(0);
   const cwdRef = useRef(cwd);
@@ -81,8 +92,15 @@ export default function App() {
   useEffect(() => save("sortDesc", sortDesc), [sortDesc]);
   useEffect(() => save("picData", picData), [picData]);
 
+  const selectPaths = useCallback((paths: string[], focus?: string) => {
+    setSels(new Set(paths));
+    const f = focus ?? paths[0] ?? null;
+    setSelPath(f);
+    anchor.current = f;
+  }, []);
+
   // ---------- folder loading ----------
-  const loadDir = useCallback(async (path: string, select?: string) => {
+  const loadDir = useCallback(async (path: string, select?: string | string[]) => {
     const g = ++genRef.current;
     clearVideoQueue();
     setLoading(true);
@@ -102,7 +120,7 @@ export default function App() {
       setGen(g);
       setEntries(items);
       setMeta({});
-      setSelPath(select ?? null);
+      selectPaths(select === undefined ? [] : typeof select === "string" ? [select] : select);
       setFilter("");
     } catch (e) {
       if (genRef.current !== g) return;
@@ -116,7 +134,7 @@ export default function App() {
         if (path) save("cwd", path);
       }
     }
-  }, []);
+  }, [selectPaths]);
 
   const go = useCallback((path: string, select?: string) => {
     const cur = cwdRef.current;
@@ -151,7 +169,7 @@ export default function App() {
     loadDir(p);
   };
   const up = () => cwd && go(parentOf(cwd), cwd);
-  const refresh = () => cwd !== null && loadDir(cwd, selPath ?? undefined);
+  const refresh = () => cwd !== null && loadDir(cwd, [...sels]);
 
   // startup: command-line file/folder, else last folder, else Pictures
   useEffect(() => {
@@ -226,10 +244,11 @@ export default function App() {
       else if (sortKey === "created") c = a.created - b.created;
       else if (sortKey === "type") c = collator.compare(a.ext, b.ext);
       else if (sortKey === "dims") c = area(a) - area(b);
+      else if (sortKey === "shuffle") return shuffleRank(a.path, seed) - shuffleRank(b.path, seed);
       if (c === 0) c = collator.compare(a.name, b.name);
       return c * sign;
     });
-  }, [entries, filter, sortKey, sortDesc, dimsMeta]);
+  }, [entries, filter, sortKey, sortDesc, dimsMeta, seed]);
 
   const media = useMemo(() => sorted.filter((i) => i.kind !== "dir"), [sorted]);
   const sel = useMemo(() => sorted.find((i) => i.path === selPath) ?? null, [sorted, selPath]);
@@ -249,24 +268,117 @@ export default function App() {
     if (fs) return setFullscreen(false);
     if (!sel || sel.kind === "dir") {
       if (!media.length) return;
-      setSelPath(media[0].path);
+      selectPaths([media[0].path]);
     }
     setFullscreen(true);
   };
 
+  // d = +-1 wraps around; bigger jumps stop at the ends
   const step = (d: number) => {
     if (!media.length) return;
-    const i = mediaIdx < 0 ? 0 : (mediaIdx + d + media.length) % media.length;
-    setSelPath(media[i].path);
+    const n = media.length;
+    const i = mediaIdx < 0 ? 0 : Math.abs(d) === 1 ? (mediaIdx + d + n) % n : Math.max(0, Math.min(n - 1, mediaIdx + d));
+    selectPaths([media[i].path]);
+  };
+
+  const wheelAt = useRef(0);
+  const onStageWheel = (dy: number) => {
+    const now = performance.now();
+    if (now - wheelAt.current < 120 || Math.abs(dy) < 1) return;
+    wheelAt.current = now;
+    step(dy > 0 ? 1 : -1);
   };
 
   const onOpen = useCallback((it: Item) => {
     if (it.kind === "dir") go(it.path);
     else {
-      setSelPath(it.path);
+      selectPaths([it.path]);
       setFullscreen(true);
     }
-  }, [go, setFullscreen]);
+  }, [go, setFullscreen, selectPaths]);
+
+  // ---------- selection: click, Ctrl+click, Shift+click ----------
+  const sortedRef = useRef<Item[]>([]);
+  sortedRef.current = sorted;
+  const selsRef = useRef(sels);
+  selsRef.current = sels;
+  const rangeTo = (path: string, add: boolean) => {
+    const list = sortedRef.current;
+    const a = list.findIndex((i) => i.path === anchor.current);
+    const b = list.findIndex((i) => i.path === path);
+    if (a < 0 || b < 0) return new Set([path]);
+    const r = new Set(add ? selsRef.current : []);
+    for (let k = Math.min(a, b); k <= Math.max(a, b); k++) r.add(list[k].path);
+    return r;
+  };
+  const onPick = useCallback((path: string, e: React.MouseEvent) => {
+    if (e.button === 2) {
+      if (!selsRef.current.has(path)) selectPaths([path]);
+      else setSelPath(path);
+      return;
+    }
+    if (e.button !== 0) return;
+    if (e.shiftKey) {
+      setSels(rangeTo(path, e.ctrlKey));
+      setSelPath(path);
+    } else if (e.ctrlKey) {
+      const n = new Set(selsRef.current);
+      if (n.has(path)) n.delete(path);
+      else n.add(path);
+      setSels(n);
+      setSelPath(path);
+      anchor.current = path;
+    } else selectPaths([path]);
+  }, [selectPaths]);
+  const onBlank = useCallback(() => selectPaths([]), [selectPaths]);
+
+  // ---------- clipboard (shared with Windows Explorer) ----------
+  const plural = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
+  const copySel = async (cut: boolean) => {
+    const paths = sorted.filter((i) => sels.has(i.path)).map((i) => i.path);
+    if (!paths.length) return;
+    try {
+      await invoke("clipboard_set", { paths, cut });
+      setCutSet(cut ? new Set(paths) : new Set());
+      setNotice(`${cut ? "Cut" : "Copied"} ${plural(paths.length)}`);
+    } catch (e) {
+      setNotice(`Clipboard error: ${e}`);
+    }
+  };
+  const paste = async () => {
+    if (!cwd) return setNotice("Open a folder to paste into");
+    const c = await invoke<ClipFiles>("clipboard_files");
+    if (!c.paths.length) return setNotice("No files on the clipboard");
+    const dest = cwd;
+    setNotice(`${c.cut ? "Moving" : "Copying"} ${plural(c.paths.length)}…`);
+    try {
+      const made = await invoke<string[]>("paste_files", { dest, paths: c.paths, mv: c.cut });
+      if (c.cut) setCutSet(new Set());
+      setNotice(`${c.cut ? "Moved" : "Copied"} ${plural(made.length)}`);
+      if (cwdRef.current === dest) loadDir(dest, made);
+    } catch (e) {
+      setNotice(String(e));
+      if (cwdRef.current === dest) loadDir(dest);
+    }
+  };
+
+  const shuffle = () => {
+    setSeed((Math.random() * 2 ** 32) >>> 0);
+    setSortKey("shuffle");
+  };
+  const edit = (it: Item | null) => it?.kind === "image" && setEditItem(it);
+
+  const openMenu = useCallback(async (path: string | null, e: React.MouseEvent) => {
+    const it = path ? sortedRef.current.find((i) => i.path === path) ?? null : null;
+    const pos = { x: e.clientX, y: e.clientY };
+    let canPaste = false;
+    try {
+      canPaste = (await invoke<ClipFiles>("clipboard_files")).paths.length > 0;
+    } catch {
+      /* no clipboard */
+    }
+    setMenu({ ...pos, item: it, canPaste });
+  }, []);
 
   const onSort = useCallback((k: SortKey) => {
     setSortKey((cur) => {
@@ -286,38 +398,56 @@ export default function App() {
     return n;
   };
 
-  const moveSel = (d: number) => {
+  const moveSel = (d: number, extend = false) => {
     if (!sorted.length) return;
     const i = sel ? sorted.indexOf(sel) : -1;
     const j = i < 0 ? 0 : Math.max(0, Math.min(sorted.length - 1, i + d));
-    setSelPath(sorted[j].path);
+    if (extend && anchor.current) {
+      setSels(rangeTo(sorted[j].path, false));
+      setSelPath(sorted[j].path);
+    } else selectPaths([sorted[j].path]);
   };
 
   // ---------- keyboard ----------
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
-    if (e.defaultPrevented) return;
+    if (e.defaultPrevented || editItem) return;
     const t = e.target as HTMLElement;
-    if (t.tagName === "SELECT" || (t.tagName === "INPUT" && (t as HTMLInputElement).type === "text")) return;
+    if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && (t as HTMLInputElement).type === "text")) return;
+    if (menu) {
+      if (e.key === "Escape") setMenu(null);
+      return;
+    }
     if (fs) {
       if (e.key === "Escape" || e.key === "F11") setFullscreen(false);
-      else if (e.key === "ArrowRight" || e.key === "PageDown") step(1);
-      else if (e.key === "ArrowLeft" || e.key === "PageUp") step(-1);
-      else if (e.key === "Home" && media.length) setSelPath(media[0].path);
-      else if (e.key === "End" && media.length) setSelPath(media[media.length - 1].path);
+      else if (e.key === "ArrowRight") step(1);
+      else if (e.key === "ArrowLeft") step(-1);
+      else if (e.key === "PageDown") step(10);
+      else if (e.key === "PageUp") step(-10);
+      else if (e.key === "Home" && media.length) selectPaths([media[0].path]);
+      else if (e.key === "End" && media.length) selectPaths([media[media.length - 1].path]);
       else return;
       e.preventDefault();
       return;
     }
-    if (e.altKey && e.key === "ArrowLeft") back();
+    const ctrl = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (ctrl && k === "c") copySel(false);
+    else if (ctrl && k === "x") copySel(true);
+    else if (ctrl && k === "v") paste();
+    else if (ctrl && k === "a") {
+      setSels(new Set(sorted.map((i) => i.path)));
+      anchor.current = sorted[0]?.path ?? null;
+    } else if (ctrl && k === "e") edit(sel);
+    else if (e.altKey && e.key === "ArrowLeft") back();
     else if (e.altKey && e.key === "ArrowRight") fwd();
     else if (e.altKey && e.key === "ArrowUp") up();
-    else if (e.key === "ArrowRight") moveSel(1);
-    else if (e.key === "ArrowLeft") moveSel(-1);
-    else if (e.key === "ArrowDown") moveSel(view === "details" ? 1 : columns());
-    else if (e.key === "ArrowUp") moveSel(view === "details" ? -1 : -columns());
-    else if (e.key === "Home") moveSel(-1e9);
-    else if (e.key === "End") moveSel(1e9);
+    else if (e.key === "ArrowRight") moveSel(1, e.shiftKey);
+    else if (e.key === "ArrowLeft") moveSel(-1, e.shiftKey);
+    else if (e.key === "ArrowDown") moveSel(view === "details" ? 1 : columns(), e.shiftKey);
+    else if (e.key === "ArrowUp") moveSel(view === "details" ? -1 : -columns(), e.shiftKey);
+    else if (e.key === "Home") moveSel(-1e9, e.shiftKey);
+    else if (e.key === "End") moveSel(1e9, e.shiftKey);
     else if (e.key === "Enter" && sel) onOpen(sel);
     else if (e.key === "Backspace") up();
     else if (e.key === "F11") toggleFs();
@@ -332,13 +462,26 @@ export default function App() {
       const a = document.activeElement as HTMLElement | null;
       if (a && a !== document.body && !(a.tagName === "INPUT" && (a as HTMLInputElement).type === "text") && a.tagName !== "SELECT") a.blur();
     };
+    // no browser menu, except in text fields
+    const ctx = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!(t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && (t as HTMLInputElement).type === "text"))) e.preventDefault();
+    };
     window.addEventListener("keydown", h);
     window.addEventListener("mouseup", blur);
+    window.addEventListener("contextmenu", ctx);
     return () => {
       window.removeEventListener("keydown", h);
       window.removeEventListener("mouseup", blur);
+      window.removeEventListener("contextmenu", ctx);
     };
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   // ---------- render ----------
   const viewValue = view !== "thumbs" ? view : PRESETS.reduce((best, p) => (Math.abs(p[1] - thumb) < Math.abs(best[1] - thumb) ? p : best))[0];
@@ -392,12 +535,21 @@ export default function App() {
           </div>
           <div className="group">
             <div className="gbody">
-              <select value={sortKey} onChange={(e) => { setSortKey(e.target.value as SortKey); e.currentTarget.blur(); }}>
+              <select value={sortKey} onChange={(e) => {
+                const k = e.target.value as SortKey;
+                if (k === "shuffle") shuffle();
+                else setSortKey(k);
+                e.currentTarget.blur();
+              }}>
                 {SORTS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
               </select>
-              <button className="rb" title={sortDesc ? "Descending" : "Ascending"} onClick={() => setSortDesc(!sortDesc)}>
+              <button className="rb" title={sortDesc ? "Descending" : "Ascending"} onClick={() => setSortDesc(!sortDesc)}
+                disabled={sortKey === "shuffle"}>
                 {sortDesc ? <ISortDesc /> : <ISortAsc />}
                 <span>{sortDesc ? "Desc" : "Asc"}</span>
+              </button>
+              <button className={"rb" + (sortKey === "shuffle" ? " active" : "")} onClick={shuffle} title="Random order (click again to reshuffle)">
+                <IShuffle /><span>Shuffle</span>
               </button>
             </div>
             <div className="glabel">Sort by</div>
@@ -415,6 +567,9 @@ export default function App() {
             <div className="gbody">
               <button className="rb" onClick={toggleFs} disabled={!media.length} title="Fullscreen (F11 / double-click)">
                 <IFull /><span>Fullscreen</span>
+              </button>
+              <button className="rb" onClick={() => edit(sel)} disabled={sel?.kind !== "image"} title="Edit the selected picture (Ctrl+E)">
+                <IEdit /><span>Edit</span>
               </button>
             </div>
             <div className="glabel">View</div>
@@ -434,7 +589,8 @@ export default function App() {
         <div className="pane-files">
           {error && <div className="error">{error}</div>}
           <FileView items={sorted} meta={meta} view={view} thumb={thumb} gen={gen} picData={picData} selPath={selPath}
-            sortKey={sortKey} sortDesc={sortDesc} onSort={onSort} onSelect={setSelPath} onOpen={onOpen} onMeta={updateMeta}
+            sels={sels} cut={cutSet} onBlank={onBlank} onContext={openMenu}
+            sortKey={sortKey} sortDesc={sortDesc} onSort={onSort} onSelect={onPick} onOpen={onOpen} onMeta={updateMeta}
             scrollRef={filesRef} empty={loading ? "Loading…" : filter ? "No matches" : "No pictures or videos here"} />
         </div>
         <Splitter onDrag={(dx, done) => {
@@ -445,17 +601,43 @@ export default function App() {
         }} />
         <div className="pane-preview" style={{ width: prevW }}>
           <Stage item={sel} meta={sel ? meta[sel.path] : undefined} picData={picData} fs={fs} index={mediaIdx} total={media.length}
-            px={px} gen={gen} onPrev={() => step(-1)} onNext={() => step(1)} onToggleFs={toggleFs} onMeta={updateMeta} />
+            px={px} gen={gen} onPrev={() => step(-1)} onNext={() => step(1)} onToggleFs={toggleFs} onMeta={updateMeta}
+            onWheel={onStageWheel} />
         </div>
       </div>
 
       <div className="status">
-        <span>{loading ? "Loading…" : `${sorted.length} items`}</span>
+        <span>{loading ? "Loading…" : `${sorted.length} items`}{sels.size > 1 ? ` · ${sels.size} selected` : ""}</span>
         <span>{nPics} pictures · {nVids} videos · {sorted.length - media.length} folders</span>
         {sel && sel.kind !== "dir" && <span className="status-sel">{sel.name} — {infoShort(sel, meta[sel.path])}</span>}
         {sel && sel.kind === "dir" && <span className="status-sel">{sel.name}</span>}
+        {notice && <span className="status-notice">{notice}</span>}
         <span className="status-r">{media.length ? fmtSize(media.reduce((s, m) => s + m.size, 0)) : ""}</span>
       </div>
+
+      {menu && (
+        <div className="menu-veil" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}>
+          <div className="menu" style={{ left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 330) }}
+            onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenu(null)}>
+            {menu.item?.kind === "dir" && <button onClick={() => go(menu.item!.path)}>Open</button>}
+            {menu.item && menu.item.kind !== "dir" && <button onClick={() => onOpen(menu.item!)}>View fullscreen</button>}
+            {menu.item?.kind === "image" && <button onClick={() => edit(menu.item)}>Edit<kbd>Ctrl+E</kbd></button>}
+            {menu.item && <hr />}
+            {menu.item && <button onClick={() => copySel(true)}>Cut<kbd>Ctrl+X</kbd></button>}
+            {menu.item && <button onClick={() => copySel(false)}>Copy<kbd>Ctrl+C</kbd></button>}
+            <button onClick={paste} disabled={!menu.canPaste || !cwd}>Paste<kbd>Ctrl+V</kbd></button>
+            <hr />
+            <button onClick={shuffle}>Shuffle</button>
+            {menu.item && <button onClick={() => invoke("reveal", { path: menu.item!.path })}>Show in Explorer</button>}
+            <button onClick={refresh}>Refresh<kbd>F5</kbd></button>
+          </div>
+        </div>
+      )}
+
+      {editItem && (
+        <Editor key={editItem.path} item={editItem} onClose={() => setEditItem(null)}
+          onSaved={(p) => cwdRef.current !== null && loadDir(cwdRef.current, p)} />
+      )}
     </div>
   );
 }

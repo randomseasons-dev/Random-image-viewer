@@ -87,6 +87,7 @@ pub fn respond(path_enc: &str, query: &str) -> Response<Vec<u8>> {
         Ok((bytes, mime)) => Response::builder()
             .header(header::CONTENT_TYPE, mime)
             .header(header::CACHE_CONTROL, "max-age=3600")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .body(bytes)
             .unwrap(),
         Err(e) => Response::builder()

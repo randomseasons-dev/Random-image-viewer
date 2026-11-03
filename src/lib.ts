@@ -6,7 +6,7 @@ export type Item = Entry & { ext: string; kind: Kind };
 export type Place = { name: string; path: string; kind: "quick" | "drive" };
 export type Meta = { w?: number; h?: number; dur?: number };
 export type View = "thumbs" | "list" | "details";
-export type SortKey = "name" | "modified" | "created" | "size" | "type" | "dims";
+export type SortKey = "name" | "modified" | "created" | "size" | "type" | "dims" | "shuffle";
 
 // shown by the webview directly
 const NATIVE = "jpg jpeg jpe jfif pjpeg pjp png apng gif webp bmp dib ico svg avif".split(" ");
@@ -37,7 +37,19 @@ export const bucket = (px: number) => [128, 256, 384, 512, 768, 1024].find((b) =
 export const thumbSrc = (it: Item, w: number, g: number) =>
   DIRECT.has(it.ext) ? convertFileSrc(it.path) : thumbUrl(it.path, w, g);
 
-export const fullSrc = (it: Item) => (CONVERT.has(it.ext) ? thumbUrl(it.path, 0, 0) : convertFileSrc(it.path));
+// v= changes when the file is saved over, so the webview does not show a cached old version
+export const fullSrc = (it: Item) =>
+  CONVERT.has(it.ext) ? `${thumbUrl(it.path, 0, 0)}&v=${it.modified}` : `${convertFileSrc(it.path)}?v=${it.modified}`;
+
+/** Stable pseudo-random rank of a path for a shuffle seed */
+export function shuffleRank(path: string, seed: number) {
+  let h = 2166136261 ^ seed;
+  for (let i = 0; i < path.length; i++) h = Math.imul(h ^ path.charCodeAt(i), 16777619);
+  h ^= h >>> 15;
+  h = Math.imul(h, 2246822507);
+  h ^= h >>> 13;
+  return h >>> 0;
+}
 
 export function normPath(p: string) {
   let t = p.trim().replace(/^"|"$/g, "").replace(/\//g, "\\");
