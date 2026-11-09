@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Entry, Item, Meta, Place, SortKey, View, bucket, fmtSize, infoShort, load, normPath, parentOf, save, shuffleRank, toItem } from "./lib";
@@ -187,8 +188,11 @@ export default function App() {
     const un = getCurrentWebview().onDragDropEvent((e) => {
       if (e.payload.type === "drop" && e.payload.paths.length) openPath(e.payload.paths[0]);
     });
+    // another picture double-clicked in Explorer while the app is open
+    const unOpen = listen<string>("open-path", (e) => openPath(e.payload));
     return () => {
       un.then((f) => f());
+      unOpen.then((f) => f());
     };
   }, [loadDir, openPath]);
 

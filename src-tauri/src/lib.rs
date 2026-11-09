@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize)]
 struct Entry {
@@ -232,6 +232,16 @@ fn startup_path() -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // a second launch (double-clicking another picture) hands its file to this window
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+            if let Some(p) = argv.get(1).filter(|a| Path::new(a).exists()) {
+                let _ = app.emit("open-path", p.clone());
+            }
+        }))
         .setup(|app| {
             let cache = app.path().app_cache_dir()?.join("thumbs");
             thumbs::init(cache);
