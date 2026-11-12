@@ -79,6 +79,7 @@ export default function App() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [notice, setNotice] = useState("");
   const anchor = useRef<string | null>(null);
+  const stageKeys = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
   const genRef = useRef(0);
   const cwdRef = useRef(cwd);
@@ -366,6 +367,36 @@ export default function App() {
     }
   };
 
+  // Delete key: to the Recycle Bin (like Explorer), then select the next item
+  const deleting = useRef(false);
+  const del = async () => {
+    const targets = fs ? (sel && sel.kind !== "dir" ? [sel] : []) : sorted.filter((i) => sels.has(i.path));
+    if (!targets.length || deleting.current) return;
+    deleting.current = true;
+    const list = fs ? media : sorted;
+    const gone = new Set(targets.map((t) => t.path));
+    const last = Math.max(...targets.map((t) => list.indexOf(t)));
+    const next = list.slice(last + 1).find((i) => !gone.has(i.path)) ?? [...list.slice(0, last)].reverse().find((i) => !gone.has(i.path));
+    try {
+      const done = new Set(await invoke<string[]>("recycle", { paths: [...gone] }));
+      if (!done.size) return setNotice("Nothing deleted");
+      setEntries((cur) => cur.filter((i) => !done.has(i.path)));
+      setCutSet((cur) => new Set([...cur].filter((x) => !done.has(x))));
+      const keep = targets.filter((t) => !done.has(t.path)).map((t) => t.path);
+      if (keep.length) selectPaths(keep);
+      else if (next) selectPaths([next.path]);
+      else {
+        selectPaths([]);
+        if (fs) setFullscreen(false);
+      }
+      setNotice(`Moved ${plural(done.size)} to the Recycle Bin` + (keep.length ? ` (${keep.length} could not be deleted)` : ""));
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      deleting.current = false;
+    }
+  };
+
   const shuffle = () => {
     setSeed((Math.random() * 2 ** 32) >>> 0);
     setSortKey("shuffle");
@@ -423,6 +454,10 @@ export default function App() {
       return;
     }
     if (fs) {
+      if (stageKeys.current?.(e)) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === "Escape" || e.key === "F11") setFullscreen(false);
       else if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
@@ -430,6 +465,9 @@ export default function App() {
       else if (e.key === "PageUp") step(-10);
       else if (e.key === "Home" && media.length) selectPaths([media[0].path]);
       else if (e.key === "End" && media.length) selectPaths([media[media.length - 1].path]);
+      else if (e.key === "Delete") del();
+      else if (e.key === "BrowserBack") step(-1);
+      else if (e.key === "BrowserForward") step(1);
       else return;
       e.preventDefault();
       return;
@@ -456,11 +494,29 @@ export default function App() {
     else if (e.key === "Backspace") up();
     else if (e.key === "F11") toggleFs();
     else if (e.key === "F5") refresh();
+    else if (e.key === "Delete") del();
+    else if (e.key === "BrowserBack") back();
+    else if (e.key === "BrowserForward") fwd();
     else return;
     e.preventDefault();
   };
+  // mouse side buttons: back / forward (fullscreen: previous / next picture)
+  const sideRef = useRef<(b: number) => void>(() => {});
+  sideRef.current = (b: number) => {
+    if (editItem || menu) return;
+    if (fs) step(b === 3 ? -1 : 1);
+    else if (b === 3) back();
+    else fwd();
+  };
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => keyRef.current(e);
+    // buttons 3/4 = side buttons; the webview would otherwise try a page history step
+    const side = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (e.type === "mouseup") sideRef.current(e.button);
+    };
     // clicked buttons/sliders must not keep focus (Space/arrows belong to the viewer)
     const blur = () => {
       const a = document.activeElement as HTMLElement | null;
@@ -472,10 +528,16 @@ export default function App() {
       if (!(t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && (t as HTMLInputElement).type === "text"))) e.preventDefault();
     };
     window.addEventListener("keydown", h);
+    window.addEventListener("mousedown", side);
+    window.addEventListener("mouseup", side);
+    window.addEventListener("auxclick", side);
     window.addEventListener("mouseup", blur);
     window.addEventListener("contextmenu", ctx);
     return () => {
       window.removeEventListener("keydown", h);
+      window.removeEventListener("mousedown", side);
+      window.removeEventListener("mouseup", side);
+      window.removeEventListener("auxclick", side);
       window.removeEventListener("mouseup", blur);
       window.removeEventListener("contextmenu", ctx);
     };
@@ -606,7 +668,7 @@ export default function App() {
         <div className="pane-preview" style={{ width: prevW }}>
           <Stage item={sel} meta={sel ? meta[sel.path] : undefined} picData={picData} fs={fs} index={mediaIdx} total={media.length}
             px={px} gen={gen} onPrev={() => step(-1)} onNext={() => step(1)} onToggleFs={toggleFs} onMeta={updateMeta}
-            onWheel={onStageWheel} />
+            onWheel={onStageWheel} keysRef={stageKeys} />
         </div>
       </div>
 
@@ -629,6 +691,7 @@ export default function App() {
             {menu.item && <hr />}
             {menu.item && <button onClick={() => copySel(true)}>Cut<kbd>Ctrl+X</kbd></button>}
             {menu.item && <button onClick={() => copySel(false)}>Copy<kbd>Ctrl+C</kbd></button>}
+            {menu.item && <button onClick={del}>Delete<kbd>Del</kbd></button>}
             <button onClick={paste} disabled={!menu.canPaste || !cwd}>Paste<kbd>Ctrl+V</kbd></button>
             <hr />
             <button onClick={shuffle}>Shuffle</button>

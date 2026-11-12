@@ -281,3 +281,10 @@ button.danger { background: var(--red); border-color: var(--red); color: #fff; }
   position: absolute; min-width: 120px; min-height: 1.4em; background: rgba(0, 0, 0, 0.25); border: 1px dashed #fff;
   outline: none; resize: both; padding: 0; line-height: 1.2; font-family: "Segoe UI", sans-serif; overflow: hidden;
 }
+
+/* fullscreen zoom (v1.3) */
+.stage-zoom { position: absolute; inset: 0; transition: transform 0.12s ease-out; will-change: transform; }
+.stage.zoomed .stage-img { cursor: grab; }
+.stage.dragging .stage-zoom { transition: none; }
+.stage.dragging .stage-img { cursor: grabbing; }
+.stage.idle .stage-img { cursor: none; }

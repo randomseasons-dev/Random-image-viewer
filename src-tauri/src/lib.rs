@@ -264,7 +264,8 @@ pub fn run() {
             files::clipboard_files,
             files::paste_files,
             files::save_image,
-            files::reveal
+            files::reveal,
+            files::recycle
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

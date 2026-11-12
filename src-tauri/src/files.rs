@@ -179,3 +179,49 @@ pub fn reveal(path: String) {
     #[cfg(not(windows))]
     let _ = path;
 }
+
+/// Sends files/folders to the Recycle Bin (never a silent permanent delete:
+/// Windows asks first when an item can't be recycled). Returns the paths that are gone.
+#[tauri::command]
+pub async fn recycle(window: tauri::WebviewWindow, paths: Vec<String>) -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    let owner = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    #[cfg(not(windows))]
+    let _ = window;
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::UI::Shell::{SHFileOperationW, SHFILEOPSTRUCTW};
+            const FO_DELETE: u32 = 3;
+            const FOF_SILENT: u16 = 0x4;
+            const FOF_NOCONFIRMATION: u16 = 0x10;
+            const FOF_ALLOWUNDO: u16 = 0x40;
+            const FOF_WANTNUKEWARNING: u16 = 0x4000;
+            // double-null-terminated list
+            let mut from: Vec<u16> = Vec::new();
+            for p in &paths {
+                from.extend(p.encode_utf16());
+                from.push(0);
+            }
+            from.push(0);
+            let mut op: SHFILEOPSTRUCTW = unsafe { std::mem::zeroed() };
+            op.hwnd = owner as _;
+            op.wFunc = FO_DELETE as _;
+            op.pFrom = from.as_ptr();
+            op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING | FOF_SILENT) as _;
+            let r = unsafe { SHFileOperationW(&mut op) };
+            let gone: Vec<String> = paths.into_iter().filter(|p| !Path::new(p).exists()).collect();
+            if gone.is_empty() && r != 0 && op.fAnyOperationsAborted == 0 {
+                return Err(format!("Delete failed (code {r})"));
+            }
+            Ok(gone)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = paths;
+            Err("not supported".to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
