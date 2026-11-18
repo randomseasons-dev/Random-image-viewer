@@ -288,3 +288,15 @@ button.danger { background: var(--red); border-color: var(--red); color: #fff; }
 .stage.dragging .stage-zoom { transition: none; }
 .stage.dragging .stage-img { cursor: grabbing; }
 .stage.idle .stage-img { cursor: none; }
+
+/* app label + properties dialog (v1.4) */
+.status-app { color: var(--muted); margin-left: 12px; white-space: nowrap; }
+.dlg-veil { position: fixed; inset: 0; z-index: 2100; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
+.dlg { background: #23262b; border: 1px solid #3d434c; border-radius: 8px; padding: 16px 18px; min-width: 380px; max-width: min(640px, 92vw); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+.dlg-title { font-weight: 600; font-size: 15px; margin-bottom: 12px; word-break: break-all; }
+.props { border-collapse: collapse; width: 100%; font-size: 13px; }
+.props th { text-align: left; color: var(--muted); font-weight: normal; padding: 4px 14px 4px 0; vertical-align: top; white-space: nowrap; }
+.props td { padding: 4px 0; word-break: break-all; }
+.dlg-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.dlg-btns .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fs-toast { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 14px; pointer-events: none; }

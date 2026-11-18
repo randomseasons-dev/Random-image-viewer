@@ -1,10 +1,11 @@
-# Picture Viewer
+# Random Image Viewer
 
 Simple picture & video viewer for Windows. Made with minimalism in mind. Can play videos inside the app. Also include a simple picture editor. 
 
 - Folder tree on the left, thumbnails in the middle, preview on the right (drag the dividers to resize; the picture always fills the preview).
 - Ribbon: Layout (Small → Huge thumbnails + size slider, List, Details), Sort by (name, dates, size, type, dimensions, asc/desc), **pic data** (green = show dimensions / size / type on every picture, also in fullscreen), Fullscreen.
-- Fullscreen: `Esc` exits, `←` / `→` previous / next. **`+` / `-` zoom** the picture 50 %–200 % (100 % = fit to screen); while zoomed the arrow keys (or dragging) move around the picture, **Space** goes back to fit, then the arrows change pictures again. Video controls and cursor hide after 3 s without mouse movement.
+- Fullscreen: `Esc` exits, `←` / `→` previous / next. **`+` / `-` zoom** the picture 25 %–300 % (100 % = fit to screen); while zoomed the arrow keys (or dragging) move around the picture, **Space** goes back to fit, then the arrows change pictures again. Video controls and cursor hide after 3 s without mouse movement.
+- **Right-click the preview or the fullscreen picture:** Copy, Move (cut), Edit, Image properties (name, folder, type, dimensions, size, dates).
 - **Delete** sends the selected files (or the picture shown in fullscreen) to the Recycle Bin. Mouse side buttons = back / forward (fullscreen: previous / next).
 - Explorer actions: Ctrl+click / Shift+click / Ctrl+A multi-select, **Ctrl+C / Ctrl+X / Ctrl+V** copy and move files (shared with Windows Explorer's clipboard), right-click menu, **Shuffle** (random order, also in the ribbon; click again to reshuffle).
 - **Editor** (right-click → Edit, or Ctrl+E): rectangle / free (lasso) / line (polygon) selection, crop, rotate 90° and flip, brush, mosaic brush and mosaic-selection, fill, text, color adjust (exposure, brightness, contrast, highlights, shadows, saturation, vibrance, warmth, tint), undo/redo, zoom/pan. Save copy (`name_edited.ext`) or overwrite.
@@ -22,7 +23,8 @@ Simple picture & video viewer for Windows. Made with minimalism in mind. Can pla
 | Arrows / Home / End | move selection (Shift = extend) |
 | Fullscreen: ← → / mouse wheel | previous / next |
 | Fullscreen: PageUp / PageDown, Home / End | jump 10 back / forward, first / last |
-| Fullscreen: `+` / `-`, Space | zoom in / out (50–200 %), back to fit |
+| Fullscreen: `+` / `-`, Space | zoom in / out (25–300 %), back to fit |
+| Alt+Enter | picture / video properties |
 | Fullscreen, zoomed: arrows | move around the picture |
 | Delete | move to the Recycle Bin |
 | Mouse back / forward buttons | back / forward (fullscreen: previous / next) |

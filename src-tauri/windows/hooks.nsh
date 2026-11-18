@@ -1,5 +1,24 @@
-; Picture types: "Open with" entries + a Windows "Default apps" page for Picture Viewer.
+; Picture types: "Open with" entries + a Windows "Default apps" page for Random Image Viewer.
 ; (The type itself -> PictureViewer.Image is registered by Tauri's fileAssociations.)
+
+; 1.4 renamed the app "Picture Viewer" -> "Random Image Viewer": silently remove the old install first
+; (settings are kept: same identifier). Waits for it (_?=) so its cleanup can't undo our registry entries.
+!macro NSIS_HOOK_PREINSTALL
+  Push $R0
+  Push $R1
+  ReadRegStr $R0 SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Picture Viewer" "InstallLocation"
+  StrCmp $R0 "" pv_old_done
+  StrCpy $R1 $R0 1
+  StrCmp $R1 '"' 0 +2
+  StrCpy $R0 $R0 -1 1
+  IfFileExists "$R0\uninstall.exe" 0 pv_old_done
+  ExecWait '"$R0\uninstall.exe" /S _?=$R0'
+  Delete "$R0\uninstall.exe"
+  RMDir "$R0"
+  pv_old_done:
+  Pop $R1
+  Pop $R0
+!macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   WriteRegStr SHCTX "Software\Classes\.jpg\OpenWithProgids" "PictureViewer.Image" ""
@@ -58,10 +77,10 @@
   WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities\FileAssociations" ".pam" "PictureViewer.Image"
   WriteRegStr SHCTX "Software\Classes\.ff\OpenWithProgids" "PictureViewer.Image" ""
   WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities\FileAssociations" ".ff" "PictureViewer.Image"
-  WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities" "ApplicationName" "Picture Viewer"
+  WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities" "ApplicationName" "Random Image Viewer"
   WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities" "ApplicationDescription" "Picture and video viewer"
   WriteRegStr SHCTX "Software\RandomSeasons\PictureViewer\Capabilities" "ApplicationIcon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\RegisteredApplications" "Picture Viewer" "Software\RandomSeasons\PictureViewer\Capabilities"
+  WriteRegStr SHCTX "Software\RegisteredApplications" "Random Image Viewer" "Software\RandomSeasons\PictureViewer\Capabilities"
   WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend
@@ -95,6 +114,7 @@
   DeleteRegValue SHCTX "Software\Classes\.ppm\OpenWithProgids" "PictureViewer.Image"
   DeleteRegValue SHCTX "Software\Classes\.pam\OpenWithProgids" "PictureViewer.Image"
   DeleteRegValue SHCTX "Software\Classes\.ff\OpenWithProgids" "PictureViewer.Image"
+  DeleteRegValue SHCTX "Software\RegisteredApplications" "Random Image Viewer"
   DeleteRegValue SHCTX "Software\RegisteredApplications" "Picture Viewer"
   DeleteRegKey SHCTX "Software\RandomSeasons\PictureViewer"
   DeleteRegKey /ifempty SHCTX "Software\RandomSeasons"

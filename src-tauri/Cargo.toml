@@ -1,7 +1,7 @@
 [package]
 name = "picture-viewer"
-version = "1.3.0"
-description = "Picture Viewer"
+version = "1.4.0"
+description = "Random Image Viewer"
 authors = ["Dong Nguyen"]
 edition = "2021"
 

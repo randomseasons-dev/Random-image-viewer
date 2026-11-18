@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { Entry, Item, Meta, Place, SortKey, View, bucket, fmtSize, infoShort, load, normPath, parentOf, save, shuffleRank, toItem } from "./lib";
+import { Entry, Item, Meta, Place, SortKey, View, bucket, fmtDur, fmtSize, infoShort, load, normPath, parentOf, save, shuffleRank, toItem } from "./lib";
 import { clearVideoQueue } from "./videoThumbs";
 import Tree from "./Tree";
 import FileView from "./FileView";
@@ -29,7 +29,8 @@ const SORTS: [SortKey, string][] = [
   ["shuffle", "Shuffled"],
 ];
 type ClipFiles = { paths: string[]; cut: boolean };
-type Menu = { x: number; y: number; item: Item | null; canPaste: boolean };
+type Menu = { x: number; y: number; item: Item | null; canPaste: boolean; stage?: boolean };
+const APP_LABEL = `Random Image Viewer ${__APP_VERSION__.replace(/\.0$/, "")}`;
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 function Splitter({ onDrag }: { onDrag: (dx: number, done: boolean) => void }) {
@@ -50,6 +51,39 @@ function Splitter({ onDrag }: { onDrag: (dx: number, done: boolean) => void }) {
         el.addEventListener("pointermove", move);
         el.addEventListener("pointerup", up);
       }} />
+  );
+}
+
+function PropsDialog({ item, meta, onClose }: { item: Item; meta?: Meta; onClose: () => void }) {
+  const [dims, setDims] = useState<[number, number] | null>(meta?.w && meta.h ? [meta.w, meta.h] : null);
+  useEffect(() => {
+    if (dims || item.kind !== "image") return;
+    invoke<([number, number] | null)[]>("get_dims", { paths: [item.path] }).then((r) => r[0] && setDims(r[0]));
+  }, [item, dims]);
+  const full = (ms: number) => (ms ? new Date(ms).toLocaleString() : "-");
+  const rows: [string, string][] = [
+    ["Type", `${item.ext.toUpperCase()} ${item.kind === "image" ? "picture" : "video"}`],
+    ["Location", parentOf(item.path)],
+    ["Dimensions", dims ? `${dims[0]} × ${dims[1]} px (${((dims[0] * dims[1]) / 1e6).toFixed(1)} MP)` : "-"],
+    ...(item.kind === "video" && meta?.dur ? [["Length", fmtDur(meta.dur)] as [string, string]] : []),
+    ["Size", `${fmtSize(item.size)} (${item.size.toLocaleString()} bytes)`],
+    ["Created", full(item.created)],
+    ["Modified", full(item.modified)],
+  ];
+  return (
+    <div className="dlg-veil" onMouseDown={onClose}>
+      <div className="dlg" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="dlg-title">{item.name}</div>
+        <table className="props">
+          <tbody>{rows.map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody>
+        </table>
+        <div className="dlg-btns">
+          <button onClick={() => invoke("reveal", { path: item.path })}>Show in Explorer</button>
+          <button onClick={() => navigator.clipboard?.writeText(item.path)}>Copy path</button>
+          <button className="primary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -78,6 +112,7 @@ export default function App() {
   const [editItem, setEditItem] = useState<Item | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [notice, setNotice] = useState("");
+  const [props, setProps] = useState<Item | null>(null);
   const anchor = useRef<string | null>(null);
   const stageKeys = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
@@ -339,8 +374,9 @@ export default function App() {
 
   // ---------- clipboard (shared with Windows Explorer) ----------
   const plural = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
-  const copySel = async (cut: boolean) => {
-    const paths = sorted.filter((i) => sels.has(i.path)).map((i) => i.path);
+  // only: these items (preview / fullscreen menu), else the selection
+  const copySel = async (cut: boolean, only?: string[]) => {
+    const paths = only ?? sorted.filter((i) => sels.has(i.path)).map((i) => i.path);
     if (!paths.length) return;
     try {
       await invoke("clipboard_set", { paths, cut });
@@ -415,6 +451,12 @@ export default function App() {
     setMenu({ ...pos, item: it, canPaste });
   }, []);
 
+  // right-click on the preview / fullscreen picture
+  const openStageMenu = (e: React.MouseEvent) => {
+    if (!sel || sel.kind === "dir") return;
+    setMenu({ x: e.clientX, y: e.clientY, item: sel, canPaste: false, stage: true });
+  };
+
   const onSort = useCallback((k: SortKey) => {
     setSortKey((cur) => {
       if (cur === k) setSortDesc((d) => !d);
@@ -447,6 +489,11 @@ export default function App() {
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
     if (e.defaultPrevented || editItem) return;
+    if (props) {
+      if (e.key === "Escape" || e.key === "Enter") setProps(null);
+      e.preventDefault();
+      return;
+    }
     const t = e.target as HTMLElement;
     if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && (t as HTMLInputElement).type === "text")) return;
     if (menu) {
@@ -466,6 +513,10 @@ export default function App() {
       else if (e.key === "Home" && media.length) selectPaths([media[0].path]);
       else if (e.key === "End" && media.length) selectPaths([media[media.length - 1].path]);
       else if (e.key === "Delete") del();
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && sel) copySel(false, [sel.path]);
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x" && sel) copySel(true, [sel.path]);
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") edit(sel);
+      else if (e.altKey && e.key === "Enter" && sel) setProps(sel);
       else if (e.key === "BrowserBack") step(-1);
       else if (e.key === "BrowserForward") step(1);
       else return;
@@ -490,6 +541,7 @@ export default function App() {
     else if (e.key === "ArrowUp") moveSel(view === "details" ? -1 : -columns(), e.shiftKey);
     else if (e.key === "Home") moveSel(-1e9, e.shiftKey);
     else if (e.key === "End") moveSel(1e9, e.shiftKey);
+    else if (e.altKey && e.key === "Enter" && sel && sel.kind !== "dir") setProps(sel);
     else if (e.key === "Enter" && sel) onOpen(sel);
     else if (e.key === "Backspace") up();
     else if (e.key === "F11") toggleFs();
@@ -503,7 +555,7 @@ export default function App() {
   // mouse side buttons: back / forward (fullscreen: previous / next picture)
   const sideRef = useRef<(b: number) => void>(() => {});
   sideRef.current = (b: number) => {
-    if (editItem || menu) return;
+    if (editItem || menu || props) return;
     if (fs) step(b === 3 ? -1 : 1);
     else if (b === 3) back();
     else fwd();
@@ -668,7 +720,7 @@ export default function App() {
         <div className="pane-preview" style={{ width: prevW }}>
           <Stage item={sel} meta={sel ? meta[sel.path] : undefined} picData={picData} fs={fs} index={mediaIdx} total={media.length}
             px={px} gen={gen} onPrev={() => step(-1)} onNext={() => step(1)} onToggleFs={toggleFs} onMeta={updateMeta}
-            onWheel={onStageWheel} keysRef={stageKeys} />
+            onWheel={onStageWheel} keysRef={stageKeys} onContext={openStageMenu} notice={notice} />
         </div>
       </div>
 
@@ -679,12 +731,21 @@ export default function App() {
         {sel && sel.kind === "dir" && <span className="status-sel">{sel.name}</span>}
         {notice && <span className="status-notice">{notice}</span>}
         <span className="status-r">{media.length ? fmtSize(media.reduce((s, m) => s + m.size, 0)) : ""}</span>
+        <span className="status-app">{APP_LABEL}</span>
       </div>
 
       {menu && (
         <div className="menu-veil" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}>
           <div className="menu" style={{ left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 330) }}
             onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenu(null)}>
+            {menu.stage && menu.item && <>
+              <button onClick={() => copySel(false, [menu.item!.path])}>Copy<kbd>Ctrl+C</kbd></button>
+              <button onClick={() => copySel(true, [menu.item!.path])}>Move (cut)<kbd>Ctrl+X</kbd></button>
+              <button onClick={() => edit(menu.item)} disabled={menu.item.kind !== "image"}>Edit<kbd>Ctrl+E</kbd></button>
+              <hr />
+              <button onClick={() => setProps(menu.item)}>{menu.item.kind === "image" ? "Image" : "Video"} properties<kbd>Alt+Enter</kbd></button>
+            </>}
+            {!menu.stage && <>
             {menu.item?.kind === "dir" && <button onClick={() => go(menu.item!.path)}>Open</button>}
             {menu.item && menu.item.kind !== "dir" && <button onClick={() => onOpen(menu.item!)}>View fullscreen</button>}
             {menu.item?.kind === "image" && <button onClick={() => edit(menu.item)}>Edit<kbd>Ctrl+E</kbd></button>}
@@ -696,10 +757,14 @@ export default function App() {
             <hr />
             <button onClick={shuffle}>Shuffle</button>
             {menu.item && <button onClick={() => invoke("reveal", { path: menu.item!.path })}>Show in Explorer</button>}
+            {menu.item && menu.item.kind !== "dir" && <button onClick={() => setProps(menu.item)}>Properties<kbd>Alt+Enter</kbd></button>}
             <button onClick={refresh}>Refresh<kbd>F5</kbd></button>
+            </>}
           </div>
         </div>
       )}
+
+      {props && <PropsDialog item={props} meta={meta[props.path]} onClose={() => setProps(null)} />}
 
       {editItem && (
         <Editor key={editItem.path} item={editItem} onClose={() => setEditItem(null)}

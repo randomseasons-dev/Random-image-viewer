@@ -17,12 +17,14 @@ type Props = {
   onToggleFs: () => void;
   onMeta: (path: string, m: Meta) => void;
   onWheel: (dy: number) => void;
+  onContext: (e: React.MouseEvent) => void;
+  notice: string;
   /** set by Stage: fullscreen key handler, returns true when it used the key (zoom / pan) */
   keysRef: React.MutableRefObject<((e: KeyboardEvent) => boolean) | null>;
 };
 
 // fullscreen zoom, relative to "fit to screen" (100 %)
-const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const ZOOMS = Array.from({ length: 12 }, (_, i) => (i + 1) * 0.25); // 25 % .. 300 %
 type Zoom = { z: number; x: number; y: number };
 const FIT: Zoom = { z: 1, x: 0, y: 0 };
 
@@ -139,6 +141,7 @@ export default function Stage(p: Props) {
   return (
     <div ref={stageRef} className={"stage" + (fs ? " fs" : "") + (showUi ? "" : " idle") + (zoomed ? " zoomed" : "") + (dragging ? " dragging" : "")}
       onMouseMove={poke} onPointerDown={onPointerDown}
+      onContextMenu={(e) => media && !(e.target as HTMLElement).closest(".vp-controls, .fs-top, .fs-nav") && p.onContext(e)}
       onWheel={(e) => fs && !(e.target as HTMLElement).closest(".vp-controls") && p.onWheel(e.deltaY)}
       onDoubleClick={(e) => item?.kind === "image" && (e.target as HTMLElement).classList.contains("stage-img") && p.onToggleFs()}>
       {!item && <div className="stage-empty">Select a picture or video</div>}
@@ -165,6 +168,7 @@ export default function Stage(p: Props) {
       {!fs && media && (
         <button className="stage-fsbtn" title="Fullscreen (F11)" onClick={p.onToggleFs}><IFull /></button>
       )}
+      {fs && p.notice && <div className="fs-toast">{p.notice}</div>}
       {fs && (
         <>
           <div className={"fs-top" + (showUi ? "" : " hide")} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)}>

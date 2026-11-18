@@ -243,6 +243,13 @@ pub fn run() {
             }
         }))
         .setup(|app| {
+            // window title = app label + version ("Random Image Viewer 1.4")
+            if let Some(w) = app.get_webview_window("main") {
+                let info = app.package_info();
+                let v = &info.version;
+                let ver = if v.patch == 0 { format!("{}.{}", v.major, v.minor) } else { v.to_string() };
+                let _ = w.set_title(&format!("{} {ver}", info.name));
+            }
             let cache = app.path().app_cache_dir()?.join("thumbs");
             thumbs::init(cache);
             Ok(())
